@@ -9,6 +9,8 @@ a pozdeji znovu pouzit.
 
 from __future__ import annotations
 
+import os.path
+
 import numpy as np
 
 
@@ -81,10 +83,15 @@ class PCA:
         # assert  Overte, ze x je typu np.ndarray.
         # assert  Overte, ze x ma 2 rozmery (matice vzorky x priznaky).
         # assert  Overte, ze x obsahuje alespon 2 vzorky (m >= 2).
-        raise NotImplementedError(
-            "Úkol: spoctete kovariancni matici (n_features x n_features) "
-            "vektorizovane — vycentrujte sloupce a vratte (xc.T @ xc) / (m - 1)."
-        )
+        assert isinstance(x, np.ndarray)
+        assert x.ndim == 2
+        assert x.shape[0] >= 2
+
+        m, _ = x.shape
+        xc = x - x.mean(axis=0)
+        cov_matrix = (xc.T @ xc) / (m - 1)
+
+        return cov_matrix
 
     def _select_components(self, eigenvalues: np.ndarray) -> int:
         """Urci pocet komponent podle prahu kumulativniho rozptylu.
@@ -109,10 +116,18 @@ class PCA:
         # assert  Overte, ze eigenvalues je 1D np.ndarray.
         # assert  Overte, ze eigenvalues jsou serazena sestupne.
         # assert  Overte, ze 0 < self.variance_threshold <= 100.
-        raise NotImplementedError(
-            "Úkol: vratte nejmensi pocet komponent, jejichz kumulativni "
-            "vysvetleny rozptyl dosahne self.variance_threshold procent."
-        )
+        assert isinstance(eigenvalues, np.ndarray)
+        assert eigenvalues.ndim == 1
+        for i in range(1, len(eigenvalues)):
+            assert eigenvalues[i] <= eigenvalues[i - 1]
+        assert 0 < self.variance_threshold <= 100
+
+        cumulative_variance = (np.cumsum(eigenvalues)/(eigenvalues.sum())) * 100
+        indices = np.where(cumulative_variance >= self.variance_threshold)[0]
+        if len(indices) == 0:
+            return len(eigenvalues)
+        return int(indices[0] + 1)
+
 
     def fit(self, x: np.ndarray) -> "PCA":
         """Nauci PCA model z trenovacich dat ``x``.
@@ -188,10 +203,11 @@ class PCA:
         """
         # assert  Overte, ze model je naucen (self.components_ neni None).
         # assert  Overte, ze X.shape[1] == self.mean_.shape[0].
-        raise NotImplementedError(
-            "Úkol: promitnete vycentrovana data na self.components_, "
-            "tedy vratte (X - self.mean_) @ self.components_."
-        )
+        assert self.components_ is not None
+        assert x.shape[1] == self.mean_.shape[0]
+
+        return (x - self.mean_)@self.components_
+
 
     def inverse_transform(self, x_pca: np.ndarray) -> np.ndarray:
         """Rekonstruuje data z prostoru hlavnich komponent zpet do puvodniho.
@@ -211,10 +227,11 @@ class PCA:
         """
         # assert  Overte, ze model je naucen (self.components_ neni None).
         # assert  Overte, ze X_pca.shape[1] == self.n_components_.
-        raise NotImplementedError(
-            "Úkol: rekonstruujte data zpet do puvodniho prostoru, "
-            "tedy vratte X_pca @ self.components_.T + self.mean_."
-        )
+        assert self.components_ is not None
+        assert x_pca.shape[1] == self.n_components_
+
+        return x_pca @ self.components_.T + self.mean_
+
 
     def save(self, path: str) -> None:
         """Ulozi naucený model do souboru ``.npz`` pomoci ``np.savez``.
@@ -241,10 +258,13 @@ class PCA:
         Format ``.npz`` uklada jen ciselna pole.
         """
         # assert  Overte, ze model je naucen (self.components_ neni None).
-        raise NotImplementedError(
-            "Úkol: ulozte naucena pole modelu do souboru .npz pomoci np.savez "
-            "(minimalne components_ a mean_, plus dalsi pole pro obnovu stavu)."
-        )
+        assert self.components_ is not None
+        np.savez(path,
+                 components_=self.components_,
+                 mean_=self.mean_,
+                 eigenvalues_=self.eigenvalues_,
+                 explained_variance_ratio_=self.explained_variance_ratio_,
+                 n_components_=np.array(self.n_components_,))
 
     # @classmethod: metoda dostane misto instance (self) samotnou tridu (cls).
     # Diky tomu ji lze volat primo na tride bez existujici instance
@@ -272,7 +292,23 @@ class PCA:
         """
         # assert  Overte, ze soubor path existuje a obsahuje pole 'components_' a 'mean_'.
         # assert  Overte, ze obnovene components_ maji 2 rozmery.
-        raise NotImplementedError(
-            "Úkol: nactete pole ze souboru .npz, vytvorte novou instanci PCA, "
-            "obnovte jeji naucene atributy a vratte ji."
-        )
+        assert os.path.exists(path)
+        data = np.load(path)
+
+        assert "components_" in data
+        assert "mean_" in data
+        assert data["components_"].ndim == 2
+
+        instance = cls()
+        instance.components_ = data["components_"]
+        instance.mean_ = data["mean_"]
+
+        if "eigenvalues_" in data:
+            instance.eigenvalues_ = data["eigenvalues_"]
+        if "explained_variance_ratio_" in data:
+            instance.explained_variance_ratio_ = data["explained_variance_ratio_"]
+        if "n_components_" in data:
+            val = data["n_components_"]
+            instance.n_components_ = int(val.item() if hasattr(val, "item") else val)
+
+        return instance

@@ -124,11 +124,38 @@ class FilterSelector(FeatureSelector):
         # assert  Ověřte, že X je 2D pole (X.ndim == 2)
         # assert  Ověřte, že len(y) == X.shape[0]
         # assert  Ověřte, že y je binarni (mnozina hodnot je podmnozinou {0, 1})
-        raise NotImplementedError(
-            "Úkol: implementujte filtrovaci vyber priznaku dvojkriteriem "
-            "vyznamnost (p < alpha) A velikost ucinku (|d| >= min_effect_size); "
-            "viz docstring."
-        )
+        assert x.ndim == 2
+        assert len(y) == x.shape[0]
+        assert set(np.unique(y)).issubset({0, 1})
+
+        n_features = x.shape[1]
+        selected = []
+
+        for j in range(n_features):
+            a = x[y == 0, j]
+            b = x[y == 1, j]
+
+            if a.size == 0 or b.size == 0:
+                continue
+
+            res_a = stats.shapiro(a)
+            p_a = res_a.pvalue if hasattr(res_a, 'pvalue') else res_a[1]
+
+            res_b = stats.shapiro(b)
+            p_b = res_b.pvalue if hasattr(res_b, 'pvalue') else res_b[1]
+
+            if p_a > self.alpha and p_b > self.alpha:
+                res_t = stats.ttest_ind(a, b)
+                p = res_t.pvalue if hasattr(res_t, 'pvalue') else res_t[1]
+            else:
+                res_m = stats.mannwhitneyu(a, b)
+                p = res_m.pvalue if hasattr(res_m, 'pvalue') else res_m[1]
+
+            d = self._cohens_d(a, b)
+            if p < self.alpha and abs(d) >= self.min_effect_size:
+                selected.append(j)
+
+        return np.array(selected)
 
     def _cohens_d(self, a: np.ndarray, b: np.ndarray) -> float:
         """Vrati Cohenovo ``d`` — velikost ucinku pro dva nezavisle vybery.
@@ -298,11 +325,12 @@ class SilhouetteWrapperSelector(WrapperSelector):
         """
         # assert  Ověřte, že X_subset je 2D pole (X_subset.ndim == 2)
         # assert  Ověřte, že X_subset.shape[0] > self.n_clusters
-        raise NotImplementedError(
-            "Úkol: implementujte siluetove skore — nafitujte KMeans na "
-            "X_subset a vratte silhouette_score(X_subset, labels); "
-            "viz docstring."
-        )
+        assert x_subset.ndim == 2
+        assert x_subset.shape[0] > self.n_clusters
+
+        kmeans = KMeans(n_clusters=self.n_clusters, random_state=self.random_state, n_init=10)
+        labels = kmeans.fit_predict(x_subset)
+        return float(silhouette_score(x_subset, labels))
 
 
 class KNNWrapperSelector(WrapperSelector):
@@ -369,8 +397,15 @@ class KNNWrapperSelector(WrapperSelector):
         # assert  Ověřte, že X_subset je 2D pole (X_subset.ndim == 2)
         # assert  Ověřte, že len(y) == X_subset.shape[0]
         # assert  Ověřte, že y obsahuje aspon 2 tridy
-        raise NotImplementedError(
-            "Úkol: implementujte skore jako testovaci presnost kNN — "
-            "train_test_split, fit KNeighborsClassifier, vratte clf.score; "
-            "viz docstring."
+
+        assert x_subset.ndim == 2
+        assert len(y) == x_subset.shape[0]
+        assert len(np.unique(y)) >= 2
+
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            x_subset, y, test_size=self.test_size,
+            random_state=self.random_state, stratify=y
         )
+        clf = KNeighborsClassifier(n_neighbors=self.n_neighbors)
+        clf.fit(X_tr, y_tr)
+        return float(clf.score(X_te, y_te))
